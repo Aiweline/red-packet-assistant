@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | Android | 识别可领取的微信红包通知、打开对应会话，并通过无障碍服务点击系统可见的红包控件 | 通知读取、无障碍权限、通知正文可见 | 已实现、通过测试并完成模拟器验收 |
 | macOS | 结合微信辅助功能树与本机 ScreenCaptureKit/Vision OCR，按下可见的红包/“开”控件 | macOS 辅助功能和屏幕录制权限、微信已登录且目标会话可见 | 已实现、通过原生测试并完成本地 Release 构建 |
-| Windows | 通过 Windows UI Automation 遍历并调用匹配控件，不注入微信进程 | 微信已登录运行 | 已实现，需在 Windows 主机或 CI 完成编译验证 |
+| Windows | 遍历 Windows UI Automation Raw 视图并激活匹配控件，不注入微信进程 | 微信已登录运行且目标会话可见 | 已实现并通过 Windows runner 测试；真实微信验收仍依赖具体版本 |
 | iOS / iPadOS | 运行统一仪表盘并说明平台边界 | 无 | 仅辅助说明；已完成构建和模拟器验收 |
 
 微信的控件标签和辅助功能结构会随版本变化，因此识别属于尽力而为。项目明确不使用私有 API、进程注入、越狱接口或绕过系统安全控制的方案。
@@ -65,7 +65,7 @@ windows/runner/automation_bridge.*    Windows UI Automation 桥接
 - Android Debug APK 构建成功，2 项原生匹配器测试通过；并在 API 36 模拟器冷启动验证了仪表盘、两类授权前披露、权限防误开及未安装微信时的安全提示。
 - macOS Release 应用构建成功，7 项原生识别测试全部通过，覆盖已领完过滤、新红包选择、结果弹窗识别，以及红包弹窗第二阶段“开”按钮的安全兜底。
 - iOS 无签名设备构建成功；并在 iPhone 17 Pro 模拟器启动验证了自动化保持禁用、系统能力边界说明准确。
-- Windows 编译由公开仓库的 GitHub Actions 强制执行，因为 Windows UI Automation 和 Windows SDK 需要 Windows 主机。
+- Windows 编译和原生匹配策略测试由公开仓库的 GitHub Actions 强制执行，因为 Windows UI Automation 和 Windows SDK 需要 Windows 主机。
 
 ## 快速开始
 
@@ -122,7 +122,7 @@ macOS 目标为了访问其他应用的辅助功能树关闭了 App Sandbox，�
 flutter build windows
 ```
 
-启动并登录微信后开启助手。Windows 端通过 UI Automation 请求 `InvokePattern`，不会向微信进程注入代码。
+启动并登录微信，让目标会话保持可见后开启助手。Windows 端优先请求 `InvokePattern`，再尝试旧版辅助功能默认动作；当微信自绘控件没有可调用模式时，才使用经过微信进程和窗口边界校验的 UI Automation 可点击点。程序会扫描 Raw UIA 视图、排除已领完卡片和侧栏误匹配，不会向微信进程注入代码。
 
 ### iOS
 

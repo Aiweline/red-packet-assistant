@@ -2,6 +2,14 @@
 
 All notable project changes are documented here.
 
+## 1.0.2 - 2026-08-28
+
+- Fixed Windows WeChat detection choosing a title-matched helper window instead of the largest visible `WeChat.exe` or `Weixin.exe` window.
+- Added Raw UI Automation tree traversal plus Name, HelpText, AutomationId, and Value matching for custom-drawn packet cards.
+- Added LegacyIAccessible and process-checked `GetClickablePoint`/`SendInput` activation fallbacks when WeChat does not expose `InvokePattern`.
+- Added position guards, completed-card association, second-stage open-button fallback, and separate detected-versus-clicked diagnostics.
+- Added Windows-native policy tests to CI and release builds.
+
 ## 1.0.1 - 2026-08-28
 
 - Fixed the macOS flow stopping after opening a packet card when Vision could not recognize the stylized circular “开” button.

@@ -19,7 +19,7 @@ The project never asks for WeChat credentials, never reads the WeChat chat datab
 | --- | --- | --- | --- |
 | Android | Detects actionable WeChat red-packet notifications, opens the conversation, and clicks exposed packet controls through AccessibilityService | Notification access, accessibility permission, visible notification content | Implemented, tested, and emulator-validated |
 | macOS | Combines WeChat's Accessibility tree with on-device ScreenCaptureKit/Vision OCR, then presses exposed packet/open controls | macOS Accessibility and Screen Recording permissions, WeChat running, signed in, and showing the target conversation | Implemented, native-tested, and release-built locally |
-| Windows | Traverses Windows UI Automation and invokes matching controls without process injection | WeChat running and signed in | Implemented; CI/Windows-host build validation required |
+| Windows | Traverses the Raw Windows UI Automation tree and activates matching controls without process injection | WeChat running, signed in, and showing the target conversation | Implemented and Windows-runner tested; live WeChat acceptance remains version-dependent |
 | iOS / iPadOS | Runs the dashboard and explains the platform boundary | None | Companion UI only; built and simulator-validated |
 
 WeChat's accessibility tree and labels can change between releases. Detection is best-effort and intentionally avoids private APIs, process injection, jailbreak techniques, or security-control bypasses.
@@ -65,7 +65,7 @@ The shared layer communicates over the method channel `com.weline.lucky_packet_a
 - The Android debug APK builds, both native matcher tests pass, and an API 36 emulator cold-launch verified the dashboard, both pre-permission disclosures, the permission guard, and the safe missing-WeChat path.
 - The macOS release app builds, and all seven native recognition tests pass, including completed-packet filtering, incoming-card selection, outcome-popup recognition, and the safe second-stage open-button fallback.
 - The unsigned iOS device app builds successfully; an iPhone 17 Pro simulator launch verified that automation is disabled and the system boundary is explained.
-- Windows compilation is enforced by the public GitHub Actions workflow because Windows UI Automation and the Windows SDK require a Windows host.
+- Windows compilation and native matcher tests are enforced by the public GitHub Actions workflow because Windows UI Automation and the Windows SDK require a Windows host.
 
 ## Quick start
 
@@ -122,7 +122,7 @@ The macOS target disables App Sandbox because a sandboxed app cannot provide thi
 flutter build windows
 ```
 
-Start and sign in to WeChat, then enable the assistant. The implementation requests `InvokePattern` through Windows UI Automation and does not inject code into WeChat.
+Start and sign in to WeChat, keep the target conversation visible, then enable the assistant. The implementation prefers `InvokePattern`, then the legacy default action, and finally a process-checked UI Automation clickable point when custom-drawn WeChat controls expose no invokable pattern. It scans the Raw UIA view, rejects completed cards and sidebar matches, and does not inject code into WeChat.
 
 ### iOS
 
