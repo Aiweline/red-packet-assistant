@@ -39,6 +39,7 @@ class AutomationBridge {
   std::wstring last_action_ = L"暂无记录";
   std::chrono::steady_clock::time_point packet_stage_until_{};
   std::chrono::steady_clock::time_point last_click_at_{};
+  std::set<std::wstring> detected_fingerprints_;
   std::set<std::wstring> processed_fingerprints_;
 };
 

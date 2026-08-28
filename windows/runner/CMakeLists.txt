@@ -17,9 +17,14 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
+add_executable(automation_policy_test
+  "automation_policy_test.cpp"
+)
+
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
+apply_standard_settings(automation_policy_test)
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
@@ -31,6 +36,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
+target_compile_definitions(automation_policy_test PRIVATE "NOMINMAX")
+target_compile_options(automation_policy_test PRIVATE /utf-8)
 
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
