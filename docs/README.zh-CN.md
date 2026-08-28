@@ -4,7 +4,7 @@
 
 # 红包助手
 
-[English](../README.md) | [简体中文](README.zh-CN.md)
+[简体中文](../README.md) | [English](../README.en.md)
 
 一个本地优先、基于用户授权的 Flutter 微信红包辅助项目。Android、macOS 和 Windows 提供尽力而为的红包识别与操作；iOS 提供诚实的状态和能力说明界面。
 
@@ -91,11 +91,12 @@ flutter test
 带版本号的开发包会在 `v*` 标签通过全部必要构建后发布到 [GitHub Releases](../../../releases)：
 
 - Android 优化 APK，使用开发签名，仅供本人设备评估；
+- 未签名的 iOS IPA，供使用自己的 Apple 证书和描述文件重新签名；
 - 使用稳定本地身份临时签名的 macOS 应用 ZIP（未使用 Developer ID 签名，也未公证）；
 - 未签名的 Windows 应用 ZIP；
 - 用于校验下载文件的 `SHA256SUMS.txt`。
 
-由于 Apple 分发需要项目专属签名凭据，仓库不会发布可安装的 iOS IPA。Release 中的版本包只为方便测试，不能替代源码审查或自行完成正式签名。
+iOS IPA 不能直接安装到普通设备：Apple 分发需要项目专属签名凭据，必须先使用自己的证书和描述文件重新签名。Release 中的版本包只为方便测试，不能替代源码审查或自行完成正式签名。
 
 ### Android
 
@@ -132,6 +133,8 @@ flutter build ios --no-codesign
 ```
 
 iOS 目标只提供辅助和状态界面，不使用私有 API、越狱接口，也不宣称普通 iOS 应用无法实现的跨应用自动化。
+
+GitHub Releases 附带的 IPA 未签名，尝试安装前必须使用自己的 Apple 开发证书和描述文件重新签名。
 
 ## 隐私与安全
 

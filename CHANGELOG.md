@@ -2,6 +2,12 @@
 
 All notable project changes are documented here.
 
+## 1.0.4 - 2026-08-28
+
+- Added an unsigned iOS IPA to tagged GitHub Releases so Android, iOS, macOS, and Windows artifacts are published together.
+- Added archive-structure validation for the unsigned IPA before upload.
+- Made Simplified Chinese the default repository README and moved the English documentation to `README.en.md`.
+
 ## 1.0.3 - 2026-08-28
 
 - Added a Windows GDI visual fallback for WeChat builds that expose the entire custom-drawn chat canvas as only three UI Automation elements.
