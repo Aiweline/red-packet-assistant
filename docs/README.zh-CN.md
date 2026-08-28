@@ -63,7 +63,7 @@ windows/runner/automation_bridge.*    Windows UI Automation 桥接
 
 - Dart 静态分析和 6 项 Flutter 测试全部通过。
 - Android Debug APK 构建成功，2 项原生匹配器测试通过；并在 API 36 模拟器冷启动验证了仪表盘、两类授权前披露、权限防误开及未安装微信时的安全提示。
-- macOS Release 应用构建成功，5 项原生识别测试全部通过，覆盖已领完过滤、新红包选择和结果弹窗识别。
+- macOS Release 应用构建成功，7 项原生识别测试全部通过，覆盖已领完过滤、新红包选择、结果弹窗识别，以及红包弹窗第二阶段“开”按钮的安全兜底。
 - iOS 无签名设备构建成功；并在 iPhone 17 Pro 模拟器启动验证了自动化保持禁用、系统能力边界说明准确。
 - Windows 编译由公开仓库的 GitHub Actions 强制执行，因为 Windows UI Automation 和 Windows SDK 需要 Windows 主机。
 
@@ -90,7 +90,7 @@ flutter test
 带版本号的开发包会在 `v*` 标签通过全部必要构建后发布到 [GitHub Releases](../../../releases)：
 
 - Android 优化 APK，使用开发签名，仅供本人设备评估；
-- 未签名的 macOS 应用 ZIP；
+- 使用稳定本地身份临时签名的 macOS 应用 ZIP（未使用 Developer ID 签名，也未公证）；
 - 未签名的 Windows 应用 ZIP；
 - 用于校验下载文件的 `SHA256SUMS.txt`。
 
@@ -112,7 +112,7 @@ flutter run -d macos
 
 在“系统设置 → 隐私与安全性 → 辅助功能”和“屏幕录制”中允许红包助手，然后重新启动红包助手。启动并登录微信，让目标会话保持可见，回到应用刷新状态后开启自动化。
 
-程序会优先使用辅助功能树；当微信没有暴露足够的控件文本时，仅截取当前可见的微信窗口，并在内存中使用 Vision OCR 本地识别。它会跳过已领完/已过期红包、重试暂时失败的截图，并在尝试后关闭结果弹窗。截图不会保存或上传。
+程序会优先使用辅助功能树；当微信没有暴露足够的控件文本时，仅截取当前可见的微信窗口，并在内存中使用 Vision OCR 本地识别。它会跳过已领完/已过期红包、重试暂时失败的截图；仅在确认红包弹窗标题后安全推导圆形“开”按钮位置，并在尝试后关闭结果弹窗。截图不会保存或上传。
 
 macOS 目标为了访问其他应用的辅助功能树关闭了 App Sandbox，适合本地开发、自签名或 Developer ID 分发，不符合 Mac App Store 沙盒要求。
 

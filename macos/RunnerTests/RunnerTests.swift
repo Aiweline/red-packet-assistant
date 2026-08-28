@@ -55,4 +55,30 @@ class RunnerTests: XCTestCase {
     XCTAssertFalse(RedPacketOCRPolicy.isPacketPosition(sidebarText))
   }
 
+  func testPacketPopupHeaderProvidesOpenButtonFallback() {
+    let header = CGRect(x: 0.35, y: 0.70, width: 0.16, height: 0.04)
+    let point = RedPacketOCRPolicy.fallbackOpenPoint(
+      label: "帝·鹿鹿发出的红包",
+      box: header
+    )
+
+    XCTAssertNotNil(point)
+    XCTAssertEqual(point?.x ?? 0, 0.43, accuracy: 0.001)
+    XCTAssertEqual(point?.y ?? 0, 0.38, accuracy: 0.001)
+  }
+
+  func testChatCardCannotTriggerOpenButtonFallback() {
+    let card = CGRect(x: 0.35, y: 0.70, width: 0.16, height: 0.04)
+
+    XCTAssertNil(
+      RedPacketOCRPolicy.fallbackOpenPoint(label: "微信红包", box: card)
+    )
+    XCTAssertNil(
+      RedPacketOCRPolicy.fallbackOpenPoint(
+        label: "帝·鹿鹿发出的红包",
+        box: CGRect(x: 0.01, y: 0.70, width: 0.12, height: 0.04)
+      )
+    )
+  }
+
 }

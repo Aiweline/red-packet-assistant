@@ -2,6 +2,14 @@
 
 All notable project changes are documented here.
 
+## 1.0.1 - 2026-08-28
+
+- Fixed the macOS flow stopping after opening a packet card when Vision could not recognize the stylized circular “开” button.
+- Added a geometry fallback that activates only after a known red-packet popup header is recognized.
+- Kept result and completed-packet detection ahead of the fallback so finished packets are not reopened.
+- Added regression coverage for both the valid popup fallback and ordinary chat-card rejection.
+- Changed macOS release packaging to use a stable ad-hoc designated requirement so locally granted permissions can survive compatible package updates.
+
 ## 1.0.0 - 2026-08-28
 
 - Added the responsive Flutter dashboard for Android, iOS, macOS, and Windows.

@@ -44,6 +44,12 @@ enum RedPacketOCRPolicy {
     "已存入零钱",
   ]
 
+  private static let popupHeaderMarkers = [
+    "发出的红包",
+    "给你发了一个红包",
+    "给你发的红包",
+  ]
+
   static func normalized(_ label: String) -> String {
     label.components(separatedBy: .whitespacesAndNewlines).joined()
   }
@@ -58,6 +64,21 @@ enum RedPacketOCRPolicy {
   static func isOpenLabel(_ label: String) -> Bool {
     let value = normalized(label)
     return value == "开" || value == "拆红包" || value == "领取红包"
+  }
+
+  static func fallbackOpenPoint(label: String, box: CGRect) -> CGPoint? {
+    let value = normalized(label)
+    guard popupHeaderMarkers.contains(where: value.contains),
+          box.midX >= 0.2,
+          box.midX <= 0.85,
+          box.midY >= 0.55,
+          box.midY <= 0.92 else {
+      return nil
+    }
+    return CGPoint(
+      x: box.midX,
+      y: min(max(box.midY - 0.34, 0.32), 0.48)
+    )
   }
 
   static func isPacketPosition(_ box: CGRect) -> Bool {
@@ -504,6 +525,8 @@ private final class MacAutomationBridge {
           "手慢了，红包派完了",
           "查看领取详情",
           "拆红包",
+          "发出的红包",
+          "给你发了一个红包",
         ]
 
         do {
@@ -579,9 +602,43 @@ private final class MacAutomationBridge {
               textHeight: box.height
             )
           }
-          continuation.resume(returning: targets.max {
+          if let target = targets.max(by: {
             $0.textHeight < $1.textHeight
-          })
+          }) {
+            continuation.resume(returning: target)
+            return
+          }
+
+          let hasOutcome = observations.contains { item in
+            RedPacketOCRPolicy.isOutcomeLabel(item.label)
+          }
+          if !hasOutcome,
+             let fallback = observations.compactMap({ item ->
+               (item: (label: String, box: CGRect, confidence: Float), point: CGPoint)? in
+               guard let point = RedPacketOCRPolicy.fallbackOpenPoint(
+                 label: item.label,
+                 box: item.box
+               ) else {
+                 return nil
+               }
+               return (item, point)
+             }).max(by: { $0.item.confidence < $1.item.confidence }) {
+            let point = CGPoint(
+              x: windowFrame.minX + fallback.point.x * windowFrame.width,
+              y: windowFrame.minY +
+                (1 - fallback.point.y) * windowFrame.height
+            )
+            continuation.resume(returning: OCRTarget(
+              label: "红包弹窗：\(fallback.item.label)",
+              kind: "open",
+              point: point,
+              normalizedY: fallback.point.y,
+              textHeight: fallback.item.box.height
+            ))
+            return
+          }
+
+          continuation.resume(returning: nil)
           return
         }
 

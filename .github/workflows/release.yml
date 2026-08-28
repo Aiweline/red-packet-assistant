@@ -56,8 +56,10 @@ jobs:
       - name: macOS native tests
         run: xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Debug test -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
       - run: flutter build macos --release
+      - name: Apply stable ad-hoc macOS signature
+        run: macos/sign_adhoc.sh "build/macos/Build/Products/Release/红包助手.app"
       - name: Package application
-        run: ditto -c -k --sequesterRsrc --keepParent "build/macos/Build/Products/Release/红包助手.app" "red-packet-assistant-macos-${GITHUB_REF_NAME}-unsigned.zip"
+        run: ditto -c -k --sequesterRsrc --keepParent "build/macos/Build/Products/Release/红包助手.app" "red-packet-assistant-macos-${GITHUB_REF_NAME}-adhoc-signed.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-release-package
@@ -118,7 +120,8 @@ jobs:
             Automated development binaries for Red Packet Assistant.
 
             - Android is development-signed and intended for evaluation on devices you control.
-            - macOS and Windows packages are unsigned.
+            - macOS is ad-hoc signed with a stable local identity, but is not Developer ID signed or notarized.
+            - Windows is unsigned.
             - An installable iOS IPA is not published because Apple distribution requires project-specific signing credentials.
 
             Verify downloads with `SHA256SUMS.txt`. Review the source, privacy notice, security policy, and disclaimer before enabling automation.

@@ -63,7 +63,7 @@ The shared layer communicates over the method channel `com.weline.lucky_packet_a
 
 - Dart static analysis and all six Flutter tests pass.
 - The Android debug APK builds, both native matcher tests pass, and an API 36 emulator cold-launch verified the dashboard, both pre-permission disclosures, the permission guard, and the safe missing-WeChat path.
-- The macOS release app builds, and all five native recognition tests pass, including completed-packet filtering, incoming-card selection, and outcome-popup recognition.
+- The macOS release app builds, and all seven native recognition tests pass, including completed-packet filtering, incoming-card selection, outcome-popup recognition, and the safe second-stage open-button fallback.
 - The unsigned iOS device app builds successfully; an iPhone 17 Pro simulator launch verified that automation is disabled and the system boundary is explained.
 - Windows compilation is enforced by the public GitHub Actions workflow because Windows UI Automation and the Windows SDK require a Windows host.
 
@@ -90,7 +90,7 @@ flutter test
 Versioned development packages are published under [GitHub Releases](../../releases) after a `v*` tag passes every required build:
 
 - Android optimized APK, development-signed for evaluation;
-- unsigned macOS application ZIP;
+- ad-hoc signed macOS application ZIP with a stable local identity (not Developer ID signed or notarized);
 - unsigned Windows application ZIP;
 - `SHA256SUMS.txt` for download verification.
 
@@ -112,7 +112,7 @@ flutter run -d macos
 
 Grant the app access under **System Settings → Privacy & Security → Accessibility** and **Screen Recording**, then relaunch Red Packet Assistant. Start and sign in to WeChat, keep the target conversation visible, refresh the dashboard, and enable automation.
 
-The Accessibility path is attempted first. When WeChat does not expose enough control text, the fallback captures only the visible WeChat window and runs Vision OCR locally in memory. It ignores completed/expired packets, retries transient captures, and closes the outcome popup after an attempt. No screenshot is saved or uploaded.
+The Accessibility path is attempted first. When WeChat does not expose enough control text, the fallback captures only the visible WeChat window and runs Vision OCR locally in memory. It ignores completed/expired packets, retries transient captures, safely derives the circular open-button position only after a packet-popup header is confirmed, and closes the outcome popup after an attempt. No screenshot is saved or uploaded.
 
 The macOS target disables App Sandbox because a sandboxed app cannot provide this cross-app accessibility workflow. It is suitable for local development, self-signing, or Developer ID distribution, but not for the Mac App Store sandbox.
 
