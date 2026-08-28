@@ -1,0 +1,55 @@
+name: Bug report
+description: Report reproducible behavior using synthetic or redacted data.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real chat content, notification payloads, contact names, credentials, or signing material. Use the Security tab for vulnerabilities.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android
+        - iOS / iPadOS
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: App commit/release, OS, Flutter, and WeChat versions.
+      placeholder: "App 1.0.0, Android 16, WeChat x.y.z"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic/redacted content only.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed personal data, credentials, and real chat content.
+          required: true

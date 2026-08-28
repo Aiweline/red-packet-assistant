@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">红包助手</string>
+    <string name="accessibility_service_label">红包助手</string>
+    <string name="accessibility_service_description">只在微信界面中识别并点击红包相关控件，随时可在应用内关闭。</string>
+</resources>

@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a bounded, permission-respecting improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the trigger, action, platform, permissions, and user control.
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and security impact
+      description: What data or permissions would be added, if any?
+    validations:
+      required: true
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Guardrails
+      options:
+        - label: This proposal does not require credentials, private APIs, process injection, or bypassing security controls.
+          required: true

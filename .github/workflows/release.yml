@@ -1,0 +1,123 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: 3.47.1
+
+jobs:
+  android:
+    name: Android package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart analyze lib test
+      - run: flutter test
+      - run: flutter build apk --release
+      - name: Android native tests
+        working-directory: android
+        run: ./gradlew testDebugUnitTest
+      - name: Name package
+        run: cp build/app/outputs/flutter-apk/app-release.apk "red-packet-assistant-android-${GITHUB_REF_NAME}-development-signed.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release-package
+          path: red-packet-assistant-android-*.apk
+
+  macos:
+    name: macOS package
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: macOS native tests
+        run: xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Debug test -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+      - run: flutter build macos --release
+      - name: Package application
+        run: ditto -c -k --sequesterRsrc --keepParent "build/macos/Build/Products/Release/红包助手.app" "red-packet-assistant-macos-${GITHUB_REF_NAME}-unsigned.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-package
+          path: red-packet-assistant-macos-*.zip
+
+  ios:
+    name: iOS build verification
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+
+  windows:
+    name: Windows package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Package application
+        shell: pwsh
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "red-packet-assistant-windows-$env:GITHUB_REF_NAME-unsigned.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-package
+          path: red-packet-assistant-windows-*.zip
+
+  publish:
+    name: Publish GitHub Release
+    needs: [android, ios, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Automated development binaries for Red Packet Assistant.
+
+            - Android is development-signed and intended for evaluation on devices you control.
+            - macOS and Windows packages are unsigned.
+            - An installable iOS IPA is not published because Apple distribution requires project-specific signing credentials.
+
+            Verify downloads with `SHA256SUMS.txt`. Review the source, privacy notice, security policy, and disclaimer before enabling automation.
+          files: release-assets/*
