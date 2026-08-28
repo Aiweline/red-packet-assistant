@@ -2,6 +2,14 @@
 
 All notable project changes are documented here.
 
+## 1.0.3 - 2026-08-28
+
+- Added a Windows GDI visual fallback for WeChat builds that expose the entire custom-drawn chat canvas as only three UI Automation elements.
+- Added local orange-card component detection, appearance tracking, and startup baselining so visible old packets are recorded but not clicked.
+- Added a packet-stage-only solid-gold open-button detector and automatic Escape closing after the result appears.
+- Reduced the Windows polling interval from 650 ms to 250 ms and allowed safe activation of WeChat-owned helper windows.
+- Added regression tests for the exact packet color observed in the reported screenshots, faded completed cards, solid open buttons, and outline-only close controls.
+
 ## 1.0.2 - 2026-08-28
 
 - Fixed Windows WeChat detection choosing a title-matched helper window instead of the largest visible `WeChat.exe` or `Weixin.exe` window.

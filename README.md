@@ -19,7 +19,7 @@ The project never asks for WeChat credentials, never reads the WeChat chat datab
 | --- | --- | --- | --- |
 | Android | Detects actionable WeChat red-packet notifications, opens the conversation, and clicks exposed packet controls through AccessibilityService | Notification access, accessibility permission, visible notification content | Implemented, tested, and emulator-validated |
 | macOS | Combines WeChat's Accessibility tree with on-device ScreenCaptureKit/Vision OCR, then presses exposed packet/open controls | macOS Accessibility and Screen Recording permissions, WeChat running, signed in, and showing the target conversation | Implemented, native-tested, and release-built locally |
-| Windows | Traverses the Raw Windows UI Automation tree and activates matching controls without process injection | WeChat running, signed in, and showing the target conversation | Implemented and Windows-runner tested; live WeChat acceptance remains version-dependent |
+| Windows | Combines Raw Windows UI Automation with an in-memory visual detector for custom-drawn packet cards, without process injection | WeChat running, signed in, unobscured, and showing the target conversation | Implemented, screenshot-regression-tested, and Windows-runner tested; live WeChat acceptance remains version-dependent |
 | iOS / iPadOS | Runs the dashboard and explains the platform boundary | None | Companion UI only; built and simulator-validated |
 
 WeChat's accessibility tree and labels can change between releases. Detection is best-effort and intentionally avoids private APIs, process injection, jailbreak techniques, or security-control bypasses.
@@ -54,7 +54,8 @@ android/app/src/main/kotlin/.../
   RedPacketAccessibilityService.kt
   AutomationState.kt
 macos/Runner/MainFlutterWindow.swift  macOS Accessibility + ScreenCaptureKit/Vision bridge
-windows/runner/automation_bridge.*    Windows UI Automation bridge
+windows/runner/automation_bridge.*    Windows UIA + visible-window capture bridge
+windows/runner/visual_detection.h     Windows in-memory color/shape detector
 ```
 
 The shared layer communicates over the method channel `com.weline.lucky_packet_assistant/automation`. Native implementations expose the same status, settings, launch, and enable/disable operations.
@@ -65,7 +66,7 @@ The shared layer communicates over the method channel `com.weline.lucky_packet_a
 - The Android debug APK builds, both native matcher tests pass, and an API 36 emulator cold-launch verified the dashboard, both pre-permission disclosures, the permission guard, and the safe missing-WeChat path.
 - The macOS release app builds, and all seven native recognition tests pass, including completed-packet filtering, incoming-card selection, outcome-popup recognition, and the safe second-stage open-button fallback.
 - The unsigned iOS device app builds successfully; an iPhone 17 Pro simulator launch verified that automation is disabled and the system boundary is explained.
-- Windows compilation and native matcher tests are enforced by the public GitHub Actions workflow because Windows UI Automation and the Windows SDK require a Windows host.
+- Windows compilation and native matcher tests are enforced by the public GitHub Actions workflow. The reported full-resolution Windows screenshots each produce exactly one packet-card region in the same C++ detector used by the runner.
 
 ## Quick start
 
@@ -122,7 +123,7 @@ The macOS target disables App Sandbox because a sandboxed app cannot provide thi
 flutter build windows
 ```
 
-Start and sign in to WeChat, keep the target conversation visible, then enable the assistant. The implementation prefers `InvokePattern`, then the legacy default action, and finally a process-checked UI Automation clickable point when custom-drawn WeChat controls expose no invokable pattern. It scans the Raw UIA view, rejects completed cards and sidebar matches, and does not inject code into WeChat.
+Start and sign in to WeChat, keep the target conversation visible and unobscured, then enable the assistant. The implementation prefers `InvokePattern`, then the legacy default action and a process-checked clickable point. If WeChat exposes the custom-drawn chat canvas as only a few UIA elements, it captures only the currently visible WeChat window through GDI and detects the orange packet-card component locally in memory. The first scan records existing cards without clicking them; only a newly appearing card is activated. During the packet stage, a separate shape guard accepts a solid gold circular open button but rejects an outline-only close control, then sends Escape after the result appears. Captured pixels are never saved or uploaded, and the app does not inject code into WeChat.
 
 ### iOS
 

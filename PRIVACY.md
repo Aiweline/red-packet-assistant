@@ -20,7 +20,7 @@ After the user grants Accessibility and Screen Recording permissions, the app re
 
 ### Windows
 
-The app reads the UI Automation name and bounds of controls in a visible WeChat window. Matching and counters remain in the app process and are not uploaded.
+The app reads the UI Automation name and bounds of controls in a visible WeChat window. When a WeChat build exposes its custom-drawn chat canvas as only a few UIA elements, the app captures the visible WeChat window through Windows GDI and evaluates packet-card colors and shapes locally in memory. Captured pixels are not saved, retained, or uploaded. Matching and counters remain in the app process and are not uploaded.
 
 ### iOS / iPadOS
 

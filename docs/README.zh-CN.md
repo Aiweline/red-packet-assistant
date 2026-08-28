@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | Android | 识别可领取的微信红包通知、打开对应会话，并通过无障碍服务点击系统可见的红包控件 | 通知读取、无障碍权限、通知正文可见 | 已实现、通过测试并完成模拟器验收 |
 | macOS | 结合微信辅助功能树与本机 ScreenCaptureKit/Vision OCR，按下可见的红包/“开”控件 | macOS 辅助功能和屏幕录制权限、微信已登录且目标会话可见 | 已实现、通过原生测试并完成本地 Release 构建 |
-| Windows | 遍历 Windows UI Automation Raw 视图并激活匹配控件，不注入微信进程 | 微信已登录运行且目标会话可见 | 已实现并通过 Windows runner 测试；真实微信验收仍依赖具体版本 |
+| Windows | 结合 Windows UI Automation Raw 视图与本地内存视觉检测处理微信自绘红包卡片，不注入微信进程 | 微信已登录运行、窗口无遮挡且目标会话可见 | 已实现、通过截图回归与 Windows runner 测试；真实微信验收仍依赖具体版本 |
 | iOS / iPadOS | 运行统一仪表盘并说明平台边界 | 无 | 仅辅助说明；已完成构建和模拟器验收 |
 
 微信的控件标签和辅助功能结构会随版本变化，因此识别属于尽力而为。项目明确不使用私有 API、进程注入、越狱接口或绕过系统安全控制的方案。
@@ -54,7 +54,8 @@ android/app/src/main/kotlin/.../
   RedPacketAccessibilityService.kt
   AutomationState.kt
 macos/Runner/MainFlutterWindow.swift  macOS Accessibility + ScreenCaptureKit/Vision 桥接
-windows/runner/automation_bridge.*    Windows UI Automation 桥接
+windows/runner/automation_bridge.*    Windows UIA + 可见窗口捕获桥接
+windows/runner/visual_detection.h     Windows 内存颜色/形状检测器
 ```
 
 共享层通过 `com.weline.lucky_packet_assistant/automation` 方法通道通信，各原生端提供一致的状态、系统设置、打开微信和启停操作。
@@ -65,7 +66,7 @@ windows/runner/automation_bridge.*    Windows UI Automation 桥接
 - Android Debug APK 构建成功，2 项原生匹配器测试通过；并在 API 36 模拟器冷启动验证了仪表盘、两类授权前披露、权限防误开及未安装微信时的安全提示。
 - macOS Release 应用构建成功，7 项原生识别测试全部通过，覆盖已领完过滤、新红包选择、结果弹窗识别，以及红包弹窗第二阶段“开”按钮的安全兜底。
 - iOS 无签名设备构建成功；并在 iPhone 17 Pro 模拟器启动验证了自动化保持禁用、系统能力边界说明准确。
-- Windows 编译和原生匹配策略测试由公开仓库的 GitHub Actions 强制执行，因为 Windows UI Automation 和 Windows SDK 需要 Windows 主机。
+- Windows 编译和原生匹配策略测试由公开仓库的 GitHub Actions 强制执行；用户报告的两张全分辨率 Windows 截图在 runner 使用的同一套 C++ 检测器中都精确产生 1 个红包卡片区域。
 
 ## 快速开始
 
@@ -122,7 +123,7 @@ macOS 目标为了访问其他应用的辅助功能树关闭了 App Sandbox，�
 flutter build windows
 ```
 
-启动并登录微信，让目标会话保持可见后开启助手。Windows 端优先请求 `InvokePattern`，再尝试旧版辅助功能默认动作；当微信自绘控件没有可调用模式时，才使用经过微信进程和窗口边界校验的 UI Automation 可点击点。程序会扫描 Raw UIA 视图、排除已领完卡片和侧栏误匹配，不会向微信进程注入代码。
+启动并登录微信，让目标会话保持可见且无遮挡后开启助手。Windows 端优先请求 `InvokePattern`，再尝试旧版辅助功能默认动作和经过微信进程校验的点击点。当微信把自绘聊天区只暴露成少量 UIA 元素时，程序仅通过 GDI 捕获当前可见的微信窗口，并在本地内存中识别橙色红包卡片。首次扫描只登记现有红包而不点击，之后只处理新出现的卡片；进入红包阶段后，另一条形状保护只接受实心金色圆形“开”按钮，拒绝只有轮廓的关闭控件，并在结果出现后发送 Esc 关闭。捕获像素不会保存或上传，程序也不会向微信进程注入代码。
 
 ### iOS
 
