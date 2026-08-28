@@ -1,6 +1,7 @@
 #include "automation_bridge.h"
 
 #include "automation_policy.h"
+#include "visual_detection.h"
 
 #include <UIAutomation.h>
 #include <Windows.h>
@@ -9,8 +10,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <deque>
 #include <iterator>
+#include <limits>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -91,6 +95,93 @@ HWND FindWeChatWindow() {
   WindowSearch search;
   EnumWindows(FindWeChatWindowCallback, reinterpret_cast<LPARAM>(&search));
   return search.window;
+}
+
+struct CapturedWindow {
+  RECT screen_bounds{};
+  int width = 0;
+  int height = 0;
+  std::vector<visual_detection::BgraPixel> pixels;
+
+  visual_detection::ImageView View() const {
+    return {pixels.data(), width, height, width};
+  }
+};
+
+bool CaptureVisibleWindow(HWND window, CapturedWindow* result) {
+  if (result == nullptr || !GetWindowRect(window, &result->screen_bounds)) {
+    return false;
+  }
+  result->width = result->screen_bounds.right - result->screen_bounds.left;
+  result->height = result->screen_bounds.bottom - result->screen_bounds.top;
+  if (result->width <= 0 || result->height <= 0) {
+    return false;
+  }
+
+  HDC screen = GetDC(nullptr);
+  if (screen == nullptr) {
+    return false;
+  }
+  HDC memory = CreateCompatibleDC(screen);
+  if (memory == nullptr) {
+    ReleaseDC(nullptr, screen);
+    return false;
+  }
+
+  BITMAPINFO bitmap_info{};
+  bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bitmap_info.bmiHeader.biWidth = result->width;
+  bitmap_info.bmiHeader.biHeight = -result->height;
+  bitmap_info.bmiHeader.biPlanes = 1;
+  bitmap_info.bmiHeader.biBitCount = 32;
+  bitmap_info.bmiHeader.biCompression = BI_RGB;
+  void* bitmap_pixels = nullptr;
+  HBITMAP bitmap = CreateDIBSection(screen, &bitmap_info, DIB_RGB_COLORS,
+                                    &bitmap_pixels, nullptr, 0);
+  if (bitmap == nullptr || bitmap_pixels == nullptr) {
+    DeleteDC(memory);
+    ReleaseDC(nullptr, screen);
+    return false;
+  }
+
+  HGDIOBJ previous_bitmap = SelectObject(memory, bitmap);
+  const BOOL copied = BitBlt(memory, 0, 0, result->width, result->height,
+                             screen, result->screen_bounds.left,
+                             result->screen_bounds.top,
+                             SRCCOPY | CAPTUREBLT);
+  if (copied) {
+    const auto* first =
+        static_cast<const visual_detection::BgraPixel*>(bitmap_pixels);
+    result->pixels.assign(
+        first, first + static_cast<size_t>(result->width) * result->height);
+  }
+
+  SelectObject(memory, previous_bitmap);
+  DeleteObject(bitmap);
+  DeleteDC(memory);
+  ReleaseDC(nullptr, screen);
+  return copied != FALSE;
+}
+
+bool IsWeChatProcessWindow(HWND window) {
+  return window != nullptr && automation_policy::IsWeChatExecutablePath(
+                                  WindowExecutablePath(window));
+}
+
+bool SendEscapeToForegroundWeChat() {
+  const HWND foreground = GetForegroundWindow();
+  if (!IsWeChatProcessWindow(foreground)) {
+    return false;
+  }
+  INPUT inputs[2] = {};
+  inputs[0].type = INPUT_KEYBOARD;
+  inputs[0].ki.wVk = VK_ESCAPE;
+  inputs[1].type = INPUT_KEYBOARD;
+  inputs[1].ki.wVk = VK_ESCAPE;
+  inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+  return SendInput(static_cast<UINT>(std::size(inputs)), inputs,
+                   static_cast<int>(sizeof(INPUT))) ==
+         static_cast<UINT>(std::size(inputs));
 }
 
 std::wstring ElementName(IUIAutomationElement* element) {
@@ -204,18 +295,32 @@ bool ClickScreenPoint(HWND window, const POINT& point) {
   if (IsIconic(window)) {
     ShowWindow(window, SW_RESTORE);
   }
-  SetForegroundWindow(window);
+  DWORD window_process = 0;
+  GetWindowThreadProcessId(window, &window_process);
+  const HWND initial_hit = WindowFromPoint(point);
+  if (initial_hit == nullptr) {
+    return false;
+  }
+  DWORD initial_process = 0;
+  GetWindowThreadProcessId(initial_hit, &initial_process);
+  if (window_process == 0 || initial_process == 0 ||
+      (window_process != initial_process &&
+       !IsWeChatProcessWindow(initial_hit))) {
+    return false;
+  }
+
+  const HWND focus_window = GetAncestor(initial_hit, GA_ROOT);
+  SetForegroundWindow(focus_window == nullptr ? window : focus_window);
   Sleep(50);
 
-  DWORD window_process = 0;
-  DWORD hit_process = 0;
-  GetWindowThreadProcessId(window, &window_process);
   const HWND hit_window = WindowFromPoint(point);
   if (hit_window == nullptr) {
     return false;
   }
+  DWORD hit_process = 0;
   GetWindowThreadProcessId(hit_window, &hit_process);
-  if (window_process == 0 || window_process != hit_process) {
+  if (window_process == 0 || hit_process == 0 ||
+      (window_process != hit_process && !IsWeChatProcessWindow(hit_window))) {
     return false;
   }
 
@@ -372,9 +477,9 @@ flutter::EncodableMap AutomationBridge::Status() {
   std::lock_guard<std::mutex> lock(state_mutex_);
   const bool running = FindWeChatWindow() != nullptr;
   const std::string message = enabled_
-                                  ? (running ? "正在监测微信窗口中的红包控件"
+                                  ? (running ? "正在监测微信窗口（UIA + 本地视觉）"
                                              : "自动化已开启，请先打开微信")
-                                  : "Windows UI Automation 已就绪，当前关闭";
+                                  : "Windows UIA 与本地视觉识别已就绪，当前关闭";
   return {
       {flutter::EncodableValue("platform"),
        flutter::EncodableValue("windows")},
@@ -401,14 +506,17 @@ flutter::EncodableMap AutomationBridge::Status() {
 }
 
 void AutomationBridge::SetEnabled(bool enabled) {
-  enabled_ = enabled;
+  const bool was_enabled = enabled_.exchange(enabled);
   std::lock_guard<std::mutex> lock(state_mutex_);
   last_action_ = enabled ? L"助手已启动" : L"助手已暂停";
   last_action_at_ = CurrentMilliseconds();
-  if (!enabled) {
+  if (!enabled || !was_enabled) {
     detected_fingerprints_.clear();
     processed_fingerprints_.clear();
     packet_stage_until_ = {};
+    popup_close_after_ = {};
+    visual_baseline_ready_ = false;
+    previous_visual_packets_.clear();
   }
 }
 
@@ -418,7 +526,7 @@ void AutomationBridge::WorkerLoop() {
     if (enabled_) {
       ScanWeChat();
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(enabled_ ? 650 : 250));
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }
   CoUninitialize();
 }
@@ -426,22 +534,6 @@ void AutomationBridge::WorkerLoop() {
 bool AutomationBridge::ScanWeChat() {
   const HWND window = FindWeChatWindow();
   if (window == nullptr) {
-    return false;
-  }
-
-  ComPtr<IUIAutomation> automation;
-  if (FAILED(CoCreateInstance(CLSID_CUIAutomation, nullptr,
-                              CLSCTX_INPROC_SERVER,
-                              IID_PPV_ARGS(automation.GetAddressOf())))) {
-    return false;
-  }
-  ComPtr<IUIAutomationElement> root;
-  if (FAILED(automation->ElementFromHandle(window, root.GetAddressOf()))) {
-    return false;
-  }
-  ComPtr<IUIAutomationTreeWalker> walker;
-  if (FAILED(automation->get_RawViewWalker(walker.GetAddressOf())) &&
-      FAILED(automation->get_ControlViewWalker(walker.GetAddressOf()))) {
     return false;
   }
 
@@ -455,11 +547,67 @@ bool AutomationBridge::ScanWeChat() {
 
   const auto now = std::chrono::steady_clock::now();
   bool stage_active = false;
+  bool visual_baseline_ready = false;
   std::chrono::steady_clock::time_point last_click;
+  std::chrono::steady_clock::time_point popup_close_after;
+  std::vector<VisualPacketSnapshot> previous_visual_packets;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     stage_active = now < packet_stage_until_;
     last_click = last_click_at_;
+    popup_close_after = popup_close_after_;
+    visual_baseline_ready = visual_baseline_ready_;
+    previous_visual_packets = previous_visual_packets_;
+  }
+
+  if (popup_close_after != std::chrono::steady_clock::time_point{} &&
+      now >= popup_close_after && SendEscapeToForegroundWeChat()) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    popup_close_after_ = {};
+    packet_stage_until_ = {};
+    last_action_ = L"已完成红包操作并自动关闭结果窗口";
+    last_action_at_ = CurrentMilliseconds();
+    return true;
+  }
+
+  CapturedWindow captured_window;
+  const bool captured = CaptureVisibleWindow(window, &captured_window);
+  std::vector<visual_detection::Region> visual_packet_regions;
+  std::vector<visual_detection::Region> visual_open_regions;
+  std::vector<VisualPacketSnapshot> current_visual_packets;
+  if (captured) {
+    const visual_detection::ImageView image = captured_window.View();
+    visual_packet_regions = visual_detection::FindPacketRegions(image);
+    if (stage_active) {
+      visual_open_regions =
+          visual_detection::FindOpenButtonRegions(image);
+    }
+    current_visual_packets.reserve(visual_packet_regions.size());
+    for (const visual_detection::Region& region : visual_packet_regions) {
+      current_visual_packets.push_back(
+          {region.bounds.left, region.bounds.top, region.bounds.right,
+           region.bounds.bottom, region.appearance_signature});
+    }
+  }
+
+  const auto remember_visual_packets = [&]() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    visual_baseline_ready_ = true;
+    previous_visual_packets_ = current_visual_packets;
+  };
+
+  ComPtr<IUIAutomation> automation;
+  ComPtr<IUIAutomationElement> root;
+  ComPtr<IUIAutomationTreeWalker> walker;
+  bool uia_ready = false;
+  if (SUCCEEDED(CoCreateInstance(CLSID_CUIAutomation, nullptr,
+                                 CLSCTX_INPROC_SERVER,
+                                 IID_PPV_ARGS(automation.GetAddressOf()))) &&
+      SUCCEEDED(automation->ElementFromHandle(window, root.GetAddressOf())) &&
+      (SUCCEEDED(automation->get_RawViewWalker(walker.GetAddressOf())) ||
+       SUCCEEDED(automation->get_ControlViewWalker(walker.GetAddressOf()))) &&
+      root && walker) {
+    uia_ready = true;
   }
 
   struct Candidate {
@@ -475,7 +623,9 @@ bool AutomationBridge::ScanWeChat() {
   std::vector<automation_policy::Bounds> terminal_bounds;
 
   std::deque<ComPtr<IUIAutomationElement>> queue;
-  queue.push_back(root);
+  if (uia_ready) {
+    queue.push_back(root);
+  }
   int inspected = 0;
   while (!queue.empty() && inspected++ < 6000) {
     ComPtr<IUIAutomationElement> element = queue.front();
@@ -570,6 +720,7 @@ bool AutomationBridge::ScanWeChat() {
       last_action_ = L"已点击微信红包卡片";
     } else {
       packet_stage_until_ = {};
+      popup_close_after_ = now + std::chrono::milliseconds(1200);
       last_action_ = L"已点击“开”红包按钮";
     }
     ++opened_count_;
@@ -587,6 +738,7 @@ bool AutomationBridge::ScanWeChat() {
             });
   for (const Candidate& candidate : open_candidates) {
     if (try_candidate(candidate, false)) {
+      remember_visual_packets();
       return true;
     }
   }
@@ -617,13 +769,53 @@ bool AutomationBridge::ScanWeChat() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         processed_fingerprints_.insert(fingerprint);
         packet_stage_until_ = {};
+        popup_close_after_ = now + std::chrono::milliseconds(1200);
         last_click_at_ = now;
         ++opened_count_;
         last_action_ = L"红包弹窗已确认，已点击圆形“开”按钮";
         last_action_at_ = CurrentMilliseconds();
+        visual_baseline_ready_ = true;
+        previous_visual_packets_ = current_visual_packets;
         return true;
       }
     }
+  }
+
+  if (stage_active &&
+      now - last_click > std::chrono::milliseconds(750) &&
+      !visual_open_regions.empty()) {
+    const visual_detection::Region& open_button = visual_open_regions.front();
+    const POINT point{
+        captured_window.screen_bounds.left +
+            automation_policy::CenterX(open_button.bounds),
+        captured_window.screen_bounds.top +
+            automation_policy::CenterY(open_button.bounds),
+    };
+    if (enabled_ && ClickScreenPoint(window, point)) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      packet_stage_until_ = {};
+      popup_close_after_ = now + std::chrono::milliseconds(1200);
+      last_click_at_ = now;
+      ++opened_count_;
+      last_action_ = L"本地视觉已定位并点击圆形“开”按钮";
+      last_action_at_ = CurrentMilliseconds();
+      visual_baseline_ready_ = true;
+      previous_visual_packets_ = current_visual_packets;
+      return true;
+    }
+  }
+
+  if (stage_active &&
+      now - last_click > std::chrono::seconds(6) &&
+      SendEscapeToForegroundWeChat()) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    packet_stage_until_ = {};
+    popup_close_after_ = {};
+    last_action_ = L"红包弹窗未出现可用“开”按钮，已安全关闭";
+    last_action_at_ = CurrentMilliseconds();
+    visual_baseline_ready_ = true;
+    previous_visual_packets_ = current_visual_packets;
+    return true;
   }
 
   std::sort(packet_candidates.begin(), packet_candidates.end(),
@@ -638,18 +830,158 @@ bool AutomationBridge::ScanWeChat() {
               candidate.bounds, terminal, window_bounds);
         });
     if (!completed && try_candidate(candidate, true)) {
+      remember_visual_packets();
       return true;
     }
   }
 
-  if (packet_candidates.empty()) {
+  if (!packet_candidates.empty()) {
+    remember_visual_packets();
+    return false;
+  }
+
+  if (!captured) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (last_action_ == L"助手已启动") {
-      last_action_ = L"微信窗口已连接，已扫描 " +
-                     std::to_wstring(inspected) +
-                     L" 个 UI 元素，暂未读取到红包文字";
+      last_action_ = L"微信窗口已连接，但暂时无法读取可见窗口像素";
       last_action_at_ = CurrentMilliseconds();
     }
+    return false;
+  }
+
+  if (!visual_baseline_ready) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    visual_baseline_ready_ = true;
+    previous_visual_packets_ = current_visual_packets;
+    if (!current_visual_packets.empty()) {
+      int newly_recorded = 0;
+      for (const VisualPacketSnapshot& packet : current_visual_packets) {
+        std::wstringstream fingerprint;
+        fingerprint << L"visual-baseline|" << packet.appearance_signature
+                    << L'|' << packet.left / 12 << L':' << packet.top / 12;
+        if (detected_fingerprints_.insert(fingerprint.str()).second) {
+          ++newly_recorded;
+        }
+      }
+      detected_count_ += newly_recorded;
+      last_action_ = L"本地视觉已识别 " +
+                     std::to_wstring(current_visual_packets.size()) +
+                     L" 个现有红包；为避免误点旧包，正在等待新红包";
+    } else {
+      last_action_ = L"微信 UIA 仅暴露 " + std::to_wstring(inspected) +
+                     L" 个元素；本地视觉通道已就绪，正在等待新红包";
+    }
+    last_action_at_ = CurrentMilliseconds();
+    return false;
+  }
+
+  const auto width = [](const VisualPacketSnapshot& packet) {
+    return packet.right - packet.left;
+  };
+  const auto height = [](const VisualPacketSnapshot& packet) {
+    return packet.bottom - packet.top;
+  };
+  const auto center_x = [&](const VisualPacketSnapshot& packet) {
+    return packet.left + width(packet) / 2;
+  };
+  const auto center_y = [&](const VisualPacketSnapshot& packet) {
+    return packet.top + height(packet) / 2;
+  };
+  const auto similar_size = [&](const VisualPacketSnapshot& left,
+                                const VisualPacketSnapshot& right) {
+    return std::abs(width(left) - width(right)) <=
+               std::max(16L, width(left) / 5) &&
+           std::abs(height(left) - height(right)) <=
+               std::max(12L, height(left) / 5);
+  };
+
+  std::vector<bool> previous_matched(previous_visual_packets.size(), false);
+  std::vector<size_t> new_visual_indices;
+  for (size_t current_index = 0;
+       current_index < current_visual_packets.size(); ++current_index) {
+    const VisualPacketSnapshot& current =
+        current_visual_packets[current_index];
+    size_t best_previous = previous_visual_packets.size();
+    long long best_distance = std::numeric_limits<long long>::max();
+    for (size_t previous_index = 0;
+         previous_index < previous_visual_packets.size(); ++previous_index) {
+      if (previous_matched[previous_index]) {
+        continue;
+      }
+      const VisualPacketSnapshot& previous =
+          previous_visual_packets[previous_index];
+      if (!similar_size(current, previous)) {
+        continue;
+      }
+      const long delta_x = center_x(current) - center_x(previous);
+      const long delta_y = center_y(current) - center_y(previous);
+      const long long distance =
+          static_cast<long long>(delta_x) * delta_x +
+          static_cast<long long>(delta_y) * delta_y;
+      const long stationary_limit =
+          std::max(24L, (raw_window_bounds.bottom - raw_window_bounds.top) /
+                            24L);
+      const bool same_appearance =
+          current.appearance_signature == previous.appearance_signature;
+      if (!same_appearance &&
+          distance > static_cast<long long>(stationary_limit) *
+                         stationary_limit) {
+        continue;
+      }
+      if (distance < best_distance) {
+        best_distance = distance;
+        best_previous = previous_index;
+      }
+    }
+    if (best_previous < previous_visual_packets.size()) {
+      previous_matched[best_previous] = true;
+    } else {
+      new_visual_indices.push_back(current_index);
+    }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    previous_visual_packets_ = current_visual_packets;
+  }
+
+  if (!new_visual_indices.empty() &&
+      now - last_click > std::chrono::milliseconds(900)) {
+    const size_t selected_index = new_visual_indices.back();
+    const VisualPacketSnapshot& packet =
+        current_visual_packets[selected_index];
+    std::wstringstream fingerprint;
+    fingerprint << L"visual-new|" << packet.appearance_signature << L'|'
+                << packet.left / 12 << L':' << packet.top / 12 << L':'
+                << width(packet) / 12 << L':' << height(packet) / 12;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      if (detected_fingerprints_.insert(fingerprint.str()).second) {
+        ++detected_count_;
+      }
+      last_action_ = L"本地视觉已识别新红包，正在安全点击";
+      last_action_at_ = CurrentMilliseconds();
+    }
+
+    const POINT point{
+        raw_window_bounds.left + center_x(packet),
+        raw_window_bounds.top + center_y(packet),
+    };
+    if (enabled_ && ClickScreenPoint(window, point)) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      processed_fingerprints_.insert(fingerprint.str());
+      packet_stage_until_ = now + std::chrono::seconds(8);
+      popup_close_after_ = {};
+      last_click_at_ = now;
+      ++opened_count_;
+      last_action_ = L"本地视觉已点击新微信红包卡片";
+      last_action_at_ = CurrentMilliseconds();
+      return true;
+    }
+
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    last_action_ = L"视觉已识别红包，但点击位置被非微信窗口遮挡";
+    last_action_at_ = CurrentMilliseconds();
   }
   return false;
 }

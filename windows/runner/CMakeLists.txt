@@ -44,6 +44,7 @@ target_compile_options(automation_policy_test PRIVATE /utf-8)
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE
+  "gdi32.lib"
   "ole32.lib"
   "oleaut32.lib"
   "shell32.lib"
