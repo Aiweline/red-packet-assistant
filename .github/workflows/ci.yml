@@ -37,7 +37,7 @@ jobs:
       - name: Android native tests
         working-directory: android
         run: ./gradlew testDebugUnitTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
@@ -58,7 +58,7 @@ jobs:
       - name: macOS native tests
         run: xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Debug test -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
       - run: flutter build macos --debug
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-debug-app
           path: build/macos/Build/Products/Debug/*.app
@@ -93,7 +93,7 @@ jobs:
         run: |
           cmake --build build\windows\x64 --config Debug --target automation_policy_test
           & build\windows\x64\runner\Debug\automation_policy_test.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-debug-app
           path: build/windows/x64/runner/Debug/**

@@ -35,7 +35,7 @@ jobs:
         run: ./gradlew testDebugUnitTest
       - name: Name package
         run: cp build/app/outputs/flutter-apk/app-release.apk "red-packet-assistant-android-${GITHUB_REF_NAME}-development-signed.apk"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-release-package
           path: red-packet-assistant-android-*.apk
@@ -60,7 +60,7 @@ jobs:
         run: macos/sign_adhoc.sh "build/macos/Build/Products/Release/红包助手.app"
       - name: Package application
         run: ditto -c -k --sequesterRsrc --keepParent "build/macos/Build/Products/Release/红包助手.app" "red-packet-assistant-macos-${GITHUB_REF_NAME}-adhoc-signed.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-release-package
           path: red-packet-assistant-macos-*.zip
@@ -84,7 +84,7 @@ jobs:
           test -f "Payload/Runner.app/Info.plist"
           zip -qry "red-packet-assistant-ios-${GITHUB_REF_NAME}-unsigned.ipa" Payload
           unzip -t "red-packet-assistant-ios-${GITHUB_REF_NAME}-unsigned.ipa"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ios-release-package
           path: red-packet-assistant-ios-*.ipa
@@ -109,7 +109,7 @@ jobs:
       - name: Package application
         shell: pwsh
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "red-packet-assistant-windows-$env:GITHUB_REF_NAME-unsigned.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-release-package
           path: red-packet-assistant-windows-*.zip
