@@ -2,11 +2,12 @@
 
 All notable project changes are documented here.
 
-## 1.0.4 - 2026-08-28
+## 1.0.4 - 2026-08-29
 
 - Added an unsigned iOS IPA to tagged GitHub Releases so Android, iOS, macOS, and Windows artifacts are published together.
 - Added archive-structure validation for the unsigned IPA before upload.
 - Made Simplified Chinese the default repository README and moved the English documentation to `README.en.md`.
+- Replaced the Windows global Escape cleanup with a position- and shape-confirmed popup close action, and added automatic recovery for hidden or minimized WeChat main windows.
 
 ## 1.0.3 - 2026-08-28
 

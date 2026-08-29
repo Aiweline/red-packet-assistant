@@ -56,16 +56,28 @@ std::wstring WindowExecutablePath(HWND window) {
 }
 
 BOOL CALLBACK FindWeChatWindowCallback(HWND window, LPARAM parameter) {
-  if (!IsWindowVisible(window) || IsIconic(window)) {
-    return TRUE;
-  }
-
+  const bool visible = IsWindowVisible(window) != FALSE;
+  const bool iconic = IsIconic(window) != FALSE;
+  const std::wstring executable_path = WindowExecutablePath(window);
+  const bool process_matches =
+      automation_policy::IsWeChatExecutablePath(executable_path);
+  const bool primary_process =
+      automation_policy::IsPrimaryWeChatExecutablePath(executable_path);
   RECT bounds{};
   if (!GetWindowRect(window, &bounds)) {
     return TRUE;
   }
-  const long width = bounds.right - bounds.left;
-  const long height = bounds.bottom - bounds.top;
+  long width = bounds.right - bounds.left;
+  long height = bounds.bottom - bounds.top;
+  if (!visible || iconic || width < 500 || height < 350) {
+    WINDOWPLACEMENT placement{};
+    placement.length = sizeof(placement);
+    if (GetWindowPlacement(window, &placement)) {
+      bounds = placement.rcNormalPosition;
+      width = bounds.right - bounds.left;
+      height = bounds.bottom - bounds.top;
+    }
+  }
   if (width < 500 || height < 350) {
     return TRUE;
   }
@@ -75,14 +87,23 @@ BOOL CALLBACK FindWeChatWindowCallback(HWND window, LPARAM parameter) {
   const std::wstring value(title);
   const bool title_matches = value.find(L"微信") != std::wstring::npos ||
                              value.find(L"WeChat") != std::wstring::npos;
-  const bool process_matches = automation_policy::IsWeChatExecutablePath(
-      WindowExecutablePath(window));
   if (!title_matches && !process_matches) {
+    return TRUE;
+  }
+  if ((!visible || iconic) && !primary_process) {
     return TRUE;
   }
 
   const long long area = static_cast<long long>(width) * height;
-  const long long score = area + (process_matches ? (1LL << 60) : 0);
+  long long score = area;
+  if (primary_process) {
+    score += 1LL << 61;
+  } else if (process_matches) {
+    score += 1LL << 60;
+  }
+  if (visible && !iconic) {
+    score += 1LL << 59;
+  }
   auto* search = reinterpret_cast<WindowSearch*>(parameter);
   if (score > search->score) {
     search->window = window;
@@ -168,20 +189,20 @@ bool IsWeChatProcessWindow(HWND window) {
                                   WindowExecutablePath(window));
 }
 
-bool SendEscapeToForegroundWeChat() {
-  const HWND foreground = GetForegroundWindow();
-  if (!IsWeChatProcessWindow(foreground)) {
+bool RestoreWeChatWindowIfNeeded(HWND window) {
+  if (window == nullptr) {
     return false;
   }
-  INPUT inputs[2] = {};
-  inputs[0].type = INPUT_KEYBOARD;
-  inputs[0].ki.wVk = VK_ESCAPE;
-  inputs[1].type = INPUT_KEYBOARD;
-  inputs[1].ki.wVk = VK_ESCAPE;
-  inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-  return SendInput(static_cast<UINT>(std::size(inputs)), inputs,
-                   static_cast<int>(sizeof(INPUT))) ==
-         static_cast<UINT>(std::size(inputs));
+  const bool needs_restore =
+      IsWindowVisible(window) == FALSE || IsIconic(window) != FALSE;
+  if (!needs_restore) {
+    return true;
+  }
+  ShowWindow(window, SW_RESTORE);
+  ShowWindow(window, SW_SHOW);
+  SetForegroundWindow(window);
+  Sleep(160);
+  return IsWindowVisible(window) != FALSE && IsIconic(window) == FALSE;
 }
 
 std::wstring ElementName(IUIAutomationElement* element) {
@@ -532,8 +553,14 @@ void AutomationBridge::WorkerLoop() {
 }
 
 bool AutomationBridge::ScanWeChat() {
-  const HWND window = FindWeChatWindow();
-  if (window == nullptr) {
+  HWND window = reinterpret_cast<HWND>(wechat_window_handle_);
+  if (window == nullptr || !IsWindow(window) ||
+      !IsWeChatProcessWindow(window)) {
+    window = FindWeChatWindow();
+    wechat_window_handle_ = reinterpret_cast<intptr_t>(window);
+  }
+  if (window == nullptr || !RestoreWeChatWindowIfNeeded(window)) {
+    wechat_window_handle_ = 0;
     return false;
   }
 
@@ -560,20 +587,14 @@ bool AutomationBridge::ScanWeChat() {
     previous_visual_packets = previous_visual_packets_;
   }
 
-  if (popup_close_after != std::chrono::steady_clock::time_point{} &&
-      now >= popup_close_after && SendEscapeToForegroundWeChat()) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    popup_close_after_ = {};
-    packet_stage_until_ = {};
-    last_action_ = L"已完成红包操作并自动关闭结果窗口";
-    last_action_at_ = CurrentMilliseconds();
-    return true;
-  }
+  const bool result_close_pending =
+      popup_close_after != std::chrono::steady_clock::time_point{};
 
   CapturedWindow captured_window;
   const bool captured = CaptureVisibleWindow(window, &captured_window);
   std::vector<visual_detection::Region> visual_packet_regions;
   std::vector<visual_detection::Region> visual_open_regions;
+  std::vector<visual_detection::Region> visual_close_regions;
   std::vector<VisualPacketSnapshot> current_visual_packets;
   if (captured) {
     const visual_detection::ImageView image = captured_window.View();
@@ -581,6 +602,11 @@ bool AutomationBridge::ScanWeChat() {
     if (stage_active) {
       visual_open_regions =
           visual_detection::FindOpenButtonRegions(image);
+    }
+    if (stage_active ||
+        (result_close_pending && now >= popup_close_after)) {
+      visual_close_regions =
+          visual_detection::FindCloseButtonRegions(image);
     }
     current_visual_packets.reserve(visual_packet_regions.size());
     for (const visual_detection::Region& region : visual_packet_regions) {
@@ -619,6 +645,7 @@ bool AutomationBridge::ScanWeChat() {
 
   std::vector<Candidate> packet_candidates;
   std::vector<Candidate> open_candidates;
+  std::vector<Candidate> close_candidates;
   std::vector<Candidate> popup_headers;
   std::vector<automation_policy::Bounds> terminal_bounds;
 
@@ -654,6 +681,12 @@ bool AutomationBridge::ScanWeChat() {
       if (stage_active && automation_policy::IsPopupHeaderLabel(label)) {
         popup_headers.push_back({element, label, name, bounds});
       }
+      if ((stage_active || result_close_pending) &&
+          (automation_policy::IsPopupCloseLabel(name) ||
+           automation_policy::IsPopupCloseLabel(label)) &&
+          automation_policy::IsPopupClosePosition(bounds, window_bounds)) {
+        close_candidates.push_back({element, label, name, bounds});
+      }
     }
 
     ComPtr<IUIAutomationElement> child;
@@ -669,6 +702,50 @@ bool AutomationBridge::ScanWeChat() {
         child = std::move(sibling);
       }
     }
+  }
+
+  const auto close_confirmed_popup = [&]() -> bool {
+    for (const visual_detection::Region& close : visual_close_regions) {
+      const POINT point{
+          captured_window.screen_bounds.left +
+              automation_policy::CenterX(close.bounds),
+          captured_window.screen_bounds.top +
+              automation_policy::CenterY(close.bounds),
+      };
+      if (ClickScreenPoint(window, point)) {
+        return true;
+      }
+    }
+    std::sort(close_candidates.begin(), close_candidates.end(),
+              [](const Candidate& left, const Candidate& right) {
+                return left.bounds.bottom > right.bounds.bottom;
+              });
+    for (const Candidate& candidate : close_candidates) {
+      if (ActivateElement(walker.Get(), candidate.element.Get(), window)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (result_close_pending) {
+    if (now < popup_close_after) {
+      return false;
+    }
+    const bool closed = close_confirmed_popup();
+    if (closed || now - last_click > std::chrono::seconds(5)) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      popup_close_after_ = {};
+      packet_stage_until_ = {};
+      visual_baseline_ready_ = false;
+      previous_visual_packets_.clear();
+      last_action_ = closed
+                         ? L"已完成红包操作并点击确认的关闭按钮"
+                         : L"结果窗口未暴露安全关闭按钮，已停止本次收尾并保持微信可见";
+      last_action_at_ = CurrentMilliseconds();
+      return closed;
+    }
+    return false;
   }
 
   const auto try_candidate = [&](const Candidate& candidate,
@@ -806,16 +883,18 @@ bool AutomationBridge::ScanWeChat() {
   }
 
   if (stage_active &&
-      now - last_click > std::chrono::seconds(6) &&
-      SendEscapeToForegroundWeChat()) {
+      now - last_click > std::chrono::seconds(6)) {
+    const bool closed = close_confirmed_popup();
     std::lock_guard<std::mutex> lock(state_mutex_);
     packet_stage_until_ = {};
     popup_close_after_ = {};
-    last_action_ = L"红包弹窗未出现可用“开”按钮，已安全关闭";
+    visual_baseline_ready_ = false;
+    previous_visual_packets_.clear();
+    last_action_ = closed
+                       ? L"红包弹窗未出现可用“开”按钮，已点击确认的关闭按钮"
+                       : L"红包弹窗未出现安全操作，已停止本次尝试并保持微信可见";
     last_action_at_ = CurrentMilliseconds();
-    visual_baseline_ready_ = true;
-    previous_visual_packets_ = current_visual_packets;
-    return true;
+    return closed;
   }
 
   std::sort(packet_candidates.begin(), packet_candidates.end(),

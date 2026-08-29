@@ -272,6 +272,41 @@ inline std::vector<Region> FindOpenButtonRegions(const ImageView& image) {
   return regions;
 }
 
+inline std::vector<Region> FindCloseButtonRegions(const ImageView& image) {
+  if (!IsValid(image)) {
+    return {};
+  }
+  const automation_policy::Bounds search_bounds{
+      image.width * 20L / 100L,
+      image.height * 50L / 100L,
+      image.width * 85L / 100L,
+      image.height * 98L / 100L,
+  };
+  std::vector<Region> regions =
+      FindConnectedRegions(image, search_bounds, IsOpenButtonGold);
+  const long shorter_side = std::min(image.width, image.height);
+  const long minimum_diameter = std::max(24L, shorter_side * 3L / 100L);
+  const long maximum_diameter = shorter_side * 16L / 100L;
+  regions.erase(
+      std::remove_if(regions.begin(), regions.end(), [&](const Region& region) {
+        const long width = automation_policy::Width(region.bounds);
+        const long height = automation_policy::Height(region.bounds);
+        return width < minimum_diameter || width > maximum_diameter ||
+               height < minimum_diameter || height > maximum_diameter ||
+               width * 100 < height * 70 || width * 100 > height * 138 ||
+               region.fill_ratio < 0.08 || region.fill_ratio >= 0.34;
+      }),
+      regions.end());
+  for (Region& region : regions) {
+    region.appearance_signature = AppearanceSignature(image, region.bounds);
+  }
+  std::sort(regions.begin(), regions.end(), [](const Region& left,
+                                                const Region& right) {
+    return left.bounds.top > right.bounds.top;
+  });
+  return regions;
+}
+
 }  // namespace visual_detection
 
 #endif  // RUNNER_VISUAL_DETECTION_H_

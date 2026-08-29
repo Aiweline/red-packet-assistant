@@ -39,10 +39,15 @@ int main() {
   assert(!automation_policy::IsPacketLabel(L"微信红包 已被领完"));
   assert(automation_policy::IsOpenLabel(L"开"));
   assert(!automation_policy::IsOpenLabel(L"开启自动处理"));
+  assert(automation_policy::IsPopupCloseLabel(L"关闭"));
+  assert(!automation_policy::IsPopupCloseLabel(L"关闭窗口后继续"));
 
   assert(automation_policy::IsWeChatExecutablePath(
       L"C:\\Program Files\\Tencent\\Weixin.exe"));
   assert(automation_policy::IsWeChatExecutablePath(L"wechat.exe"));
+  assert(automation_policy::IsPrimaryWeChatExecutablePath(L"wechat.exe"));
+  assert(!automation_policy::IsPrimaryWeChatExecutablePath(
+      L"WeChatAppEx.exe"));
   assert(!automation_policy::IsWeChatExecutablePath(L"红包助手.exe"));
 
   const Bounds window{480, 40, 1900, 1140};
@@ -60,6 +65,10 @@ int main() {
       Bounds{980, 520, 1040, 580}, window));
   assert(!automation_policy::IsOpenPosition(
       Bounds{540, 520, 600, 580}, window));
+  assert(automation_policy::IsPopupClosePosition(
+      Bounds{960, 880, 1020, 940}, window));
+  assert(!automation_policy::IsPopupClosePosition(
+      Bounds{1820, 55, 1870, 105}, window));
 
   Point fallback;
   const Bounds popup_header{850, 250, 1130, 300};
@@ -133,6 +142,11 @@ int main() {
     }
   }
   assert(visual_detection::FindOpenButtonRegions(image).empty());
+  const std::vector<visual_detection::Region> close_regions =
+      visual_detection::FindCloseButtonRegions(image);
+  assert(close_regions.size() == 1);
+  assert(automation_policy::CenterY(close_regions.front().bounds) >= 426);
+  assert(automation_policy::CenterY(close_regions.front().bounds) <= 434);
 
   std::cout << "Windows automation policy tests passed\n";
   return 0;

@@ -49,6 +49,7 @@ class AutomationBridge {
   std::chrono::steady_clock::time_point packet_stage_until_{};
   std::chrono::steady_clock::time_point last_click_at_{};
   std::chrono::steady_clock::time_point popup_close_after_{};
+  intptr_t wechat_window_handle_ = 0;
   bool visual_baseline_ready_ = false;
   std::vector<VisualPacketSnapshot> previous_visual_packets_;
   std::set<std::wstring> detected_fingerprints_;

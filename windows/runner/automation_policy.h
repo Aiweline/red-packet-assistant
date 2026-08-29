@@ -69,6 +69,10 @@ inline bool IsPopupHeaderLabel(std::wstring_view text) {
                             L"给你发的红包"});
 }
 
+inline bool IsPopupCloseLabel(std::wstring_view text) {
+  return text == L"关闭" || text == L"返回";
+}
+
 inline bool IsUsableBounds(const Bounds& value, const Bounds& window) {
   return Width(value) >= 4 && Height(value) >= 4 &&
          CenterX(value) >= window.left && CenterX(value) <= window.right &&
@@ -101,6 +105,25 @@ inline bool IsOpenPosition(const Bounds& value, const Bounds& window) {
       static_cast<double>(CenterY(value) - window.top) / Height(window);
   return normalized_x >= 0.3 && normalized_x <= 0.78 &&
          normalized_y >= 0.22 && normalized_y <= 0.78;
+}
+
+inline bool IsPopupClosePosition(const Bounds& value, const Bounds& window) {
+  if (!IsUsableBounds(value, window) || Width(window) <= 0 ||
+      Height(window) <= 0) {
+    return false;
+  }
+  const double normalized_x =
+      static_cast<double>(CenterX(value) - window.left) / Width(window);
+  const double normalized_y =
+      static_cast<double>(CenterY(value) - window.top) / Height(window);
+  const long shorter_side = std::min(Width(window), Height(window));
+  const long width = Width(value);
+  const long height = Height(value);
+  return normalized_x >= 0.22 && normalized_x <= 0.82 &&
+         normalized_y >= 0.50 && normalized_y <= 0.97 && width >= 18 &&
+         height >= 18 && width <= shorter_side * 18 / 100 &&
+         height <= shorter_side * 18 / 100 && width * 100 >= height * 60 &&
+         width * 100 <= height * 165;
 }
 
 inline bool IsSamePacketCard(const Bounds& packet,
@@ -158,6 +181,14 @@ inline bool IsWeChatExecutablePath(std::wstring_view path) {
   return EqualsCaseInsensitive(file_name, L"WeChat.exe") ||
          EqualsCaseInsensitive(file_name, L"Weixin.exe") ||
          EqualsCaseInsensitive(file_name, L"WeChatAppEx.exe");
+}
+
+inline bool IsPrimaryWeChatExecutablePath(std::wstring_view path) {
+  const size_t separator = path.find_last_of(L"\\/");
+  const std::wstring_view file_name =
+      separator == std::wstring_view::npos ? path : path.substr(separator + 1);
+  return EqualsCaseInsensitive(file_name, L"WeChat.exe") ||
+         EqualsCaseInsensitive(file_name, L"Weixin.exe");
 }
 
 }  // namespace automation_policy
